@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
 # The database file lives next to this script and is created automatically.
@@ -106,3 +106,27 @@ def create_task(body: TaskIn):
             )
             task_id = cur.lastrowid  # the database hands out the id
     return {"id": task_id, "title": body.title, "done": body.done}
+
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, body: TaskIn):
+    with closing(get_conn()) as conn:
+        with conn:
+            cur = conn.execute(
+                "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+                (body.title, int(body.done), task_id),
+            )
+        if cur.rowcount == 0:
+            return error(404, "Task not found")
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return row_to_task(row)
+
+
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int):
+    with closing(get_conn()) as conn:
+        with conn:
+            cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    if cur.rowcount == 0:
+        return error(404, "Task not found")
+    return Response(status_code=204)
