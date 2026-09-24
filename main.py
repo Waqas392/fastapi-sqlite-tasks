@@ -1,4 +1,8 @@
-"""Tasks API — Assignment A2: same CRUD endpoints as A1, now backed by SQLite."""
+"""Tasks API — Assignment A2: same CRUD endpoints as A1, now backed by SQLite.
+
+Only the storage layer changed. The routes keep the same URLs, request bodies,
+responses and status codes as the in-memory version.
+"""
 import os
 import sqlite3
 from contextlib import asynccontextmanager, closing
@@ -58,10 +62,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Tasks API (SQLite)", lifespan=lifespan)
 
 
-def error(status: int, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"error": message})
-
-
 class TaskIn(BaseModel):
     title: str
     done: bool = False
@@ -75,6 +75,10 @@ class TaskIn(BaseModel):
         return v
 
 
+def error(status: int, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": message})
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_handler(request: Request, exc: RequestValidationError):
     # FastAPI defaults to 422; the assignment (and A1) use 400 for invalid bodies.
@@ -82,9 +86,18 @@ async def validation_handler(request: Request, exc: RequestValidationError):
 
 
 @app.get("/tasks")
-def list_tasks():
+def list_tasks(search: str | None = None, done: bool | None = None, sort: str | None = None):
+    # Optional extras: ?search=milk  ?done=true  ?sort=title — all done in SQL.
+    sql, params = "SELECT * FROM tasks WHERE 1=1", []
+    if search is not None:
+        sql += " AND title LIKE ?"
+        params.append(f"%{search}%")
+    if done is not None:
+        sql += " AND done = ?"
+        params.append(int(done))
+    sql += " ORDER BY title" if sort == "title" else " ORDER BY id"
     with closing(get_conn()) as conn:
-        rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [row_to_task(r) for r in rows]
 
 
@@ -130,3 +143,12 @@ def delete_task(task_id: int):
     if cur.rowcount == 0:
         return error(404, "Task not found")
     return Response(status_code=204)
+
+
+@app.get("/stats")
+def stats():
+    # Optional extra: let SQL do the counting.
+    with closing(get_conn()) as conn:
+        total, = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()
+        completed, = conn.execute("SELECT COUNT(*) FROM tasks WHERE done = 1").fetchone()
+    return {"total": total, "completed": completed, "pending": total - completed}
