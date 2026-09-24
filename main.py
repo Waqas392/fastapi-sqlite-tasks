@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager, closing
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 # The database file lives next to this script and is created automatically.
 DB_PATH = Path(os.getenv("TASKS_DB", Path(__file__).parent / "tasks.db"))
@@ -40,6 +41,11 @@ def init_db() -> None:
                 )
 
 
+def row_to_task(row: sqlite3.Row) -> dict:
+    # SQLite stores booleans as 0/1; the API keeps returning true/false like A1.
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+
 # ------------------------------------------------------------------------- app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,3 +54,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Tasks API (SQLite)", lifespan=lifespan)
+
+
+def error(status: int, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": message})
+
+
+@app.get("/tasks")
+def list_tasks():
+    with closing(get_conn()) as conn:
+        rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+    return [row_to_task(r) for r in rows]
+
+
+@app.get("/tasks/{task_id}")
+def get_task(task_id: int):
+    with closing(get_conn()) as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        return error(404, "Task not found")
+    return row_to_task(row)
