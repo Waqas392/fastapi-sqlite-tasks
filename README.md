@@ -1,89 +1,122 @@
-# Tasks API — PostgreSQL + Docker Compose (FlyRank BE-02 / A3)
+# Tasks API — FastAPI, PostgreSQL & Docker Compose
 
-A REST API for managing tasks, built with FastAPI and PostgreSQL. The application and database run in Docker containers and can be started with one command.
+A REST API for managing tasks, built with FastAPI and PostgreSQL. Docker Compose runs the application and database together, while a named Docker volume preserves database records across container restarts.
 
-**Stack:** Python, FastAPI, PostgreSQL, Docker, Docker Compose
+**FlyRank assignment:** A3 — Containerize Your Stack (BE-04)
+
+## Technology Stack
+
+- Python and FastAPI
+- PostgreSQL
+- Docker and Docker Compose
 
 ## Features
 
-- Create, read, update, and delete tasks.
-- Automatically create the database table on startup.
-- Seed three example tasks only when the table is empty.
-- Validate requests and return consistent error responses.
+- Create, read, update, and delete tasks (CRUD).
+- Initialize the database table automatically at application startup.
+- Insert three example tasks when the table is empty.
+- Validate requests and return appropriate HTTP responses.
 - Use parameterized SQL queries.
-- Preserve database records using a named Docker volume.
+- Persist database records in a named Docker volume.
+- Provide interactive API documentation through Swagger UI.
 
-## Requirements
+## Prerequisites
 
-Install Docker Desktop and ensure it is running.
+- Docker Desktop installed and running.
+- Git installed if you plan to clone the repository.
+
+## Project Structure
+
+```text
+.
+├── docs/
+│   └── postgres-tasks.png
+├── .dockerignore
+├── .env.example
+├── .gitignore
+├── Dockerfile
+├── compose.yaml
+├── db.py
+├── main.py
+├── requirements.txt
+└── README.md
+```
 
 ## Configuration
 
-Copy the example environment file:
+From the project directory, create a local `.env` file using the example configuration.
+
+On Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Configuration variables:
+The configuration includes the following variables:
 
 | Variable | Purpose |
 |---|---|
-| `POSTGRES_PASSWORD` | Password for the PostgreSQL database |
-| `DATABASE_URL` | Database connection string |
+| `POSTGRES_PASSWORD` | Password used by PostgreSQL |
+| `DATABASE_URL` | Connection string used by the application |
 
-The supplied values are for local development. Do not commit your `.env` file or real credentials.
+The example configuration is intended for local development. Keep `.env` and any real credentials out of version control. The `.env.example` file should contain only safe example values.
 
-## Run the application
+## Run the Application
 
-From the project directory, run:
+Build the application image and start the application and database:
 
 ```bash
-docker compose up
+docker compose up --build
 ```
 
-Docker Compose builds the API image, starts PostgreSQL, waits for the database health check, and starts the API.
+Docker Compose starts PostgreSQL, waits for its configured health check, and starts the API.
 
-- API: http://localhost:3000
-- Interactive documentation: http://localhost:3000/docs
-- PostgreSQL host port: `5432`
+Once the services are running, access:
 
-To start in the background:
+- **API:** http://localhost:3000
+- **Interactive API documentation:** http://localhost:3000/docs
+- **PostgreSQL host port:** `5432`
+
+To run the containers in the background:
 
 ```bash
 docker compose up --build -d
 ```
 
-To stop the containers without deleting database data:
+To check their status:
 
 ```bash
-docker compose down
+docker compose ps
 ```
 
-Start them again with `docker compose up`. The named volume preserves database records.
+## API Endpoints
 
-## API endpoints
-
-| Method | Path | Success | Errors |
+| Method | Endpoint | Success Response | Common Errors |
 |---|---|---|---|
-| GET | `/tasks` | 200 | — |
-| GET | `/tasks/{id}` | 200 | 404 if the task does not exist |
-| POST | `/tasks` | 201 | 400 for an invalid title |
-| PUT | `/tasks/{id}` | 200 | 400 for an invalid body; 404 if the task does not exist |
-| DELETE | `/tasks/{id}` | 204 | 404 if the task does not exist |
-| GET | `/stats` | 200 | — |
+| GET | `/tasks` | 200 OK | — |
+| GET | `/tasks/{id}` | 200 OK | 404 Not Found |
+| POST | `/tasks` | 201 Created | 400 Bad Request for an invalid title |
+| PUT | `/tasks/{id}` | 200 OK | 400 Bad Request or 404 Not Found |
+| DELETE | `/tasks/{id}` | 204 No Content | 404 Not Found |
+| GET | `/stats` | 200 OK | — |
 
-Optional filters include `GET /tasks?search=milk`, `GET /tasks?done=true`, and `GET /tasks?sort=title`.
+Optional filters include:
+
+- `GET /tasks?search=milk` — search tasks.
+- `GET /tasks?done=true` — filter by completion status.
+- `GET /tasks?sort=title` — sort tasks by title.
+
+For request schemas and additional endpoint details, visit the interactive documentation at http://localhost:3000/docs.
 
 ## Test the API
 
-List tasks:
+### List tasks
 
 ```bash
 curl -i http://localhost:3000/tasks
 ```
 
-Create a task:
+### Create a task
 
 ```bash
 curl -i -X POST http://localhost:3000/tasks \
@@ -91,21 +124,21 @@ curl -i -X POST http://localhost:3000/tasks \
   -d '{"title":"Test Docker setup","done":false}'
 ```
 
-The create request should return HTTP `201 Created`.
+A successful creation should return `201 Created`.
 
-Check statistics:
+### Check statistics
 
 ```bash
 curl -i http://localhost:3000/stats
 ```
 
-## Database initialization and persistence
+## Database Initialization and Persistence
 
-The application creates the `tasks` table automatically. Three example tasks are inserted only when the table is empty.
+The application creates the `tasks` table during startup and inserts three example tasks only when the table is empty.
 
-PostgreSQL stores data in the named Docker volume `taskdata`. Running `docker compose down` preserves the volume. Do not use `docker compose down -v` when testing persistence because it deletes the volume.
+PostgreSQL data is stored in the named Docker volume `taskdata`. Stopping and removing the containers does not remove this volume unless it is explicitly deleted.
 
-## Verify the database
+### Inspect the Database
 
 With the containers running, connect to PostgreSQL:
 
@@ -117,32 +150,58 @@ At the PostgreSQL prompt, run:
 
 ```sql
 \dt
-SELECT * FROM tasks;
+SELECT * FROM tasks ORDER BY id;
 ```
 
-The first command lists the database tables. The second displays stored task records.
+- `\dt` lists the database tables.
+- The `SELECT` statement displays the stored task records.
 
-Save a screenshot of the actual PostgreSQL table and query results as `docs/postgres-tasks.png`, then commit it to the repository.
+To exit the PostgreSQL prompt, run:
+
+```sql
+\q
+```
+
+### Verify Persistence
+
+To check that records survive a container restart:
+
+1. Start the application and database.
+2. Query PostgreSQL and confirm that the task records exist.
+3. Stop the containers without deleting the database volume:
+
+   ```bash
+   docker compose down
+   ```
+
+4. Start the services again:
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. Query PostgreSQL again and confirm that the records remain.
+
+**Recorded test result:** In the development test, the three example tasks—`Buy milk`, `Learn SQL`, and `Push project to GitHub`—remained available after the containers were restarted.
+
+**Important:** Do not use `docker compose down -v` during this test, because it removes the Compose-managed volume.
+
+### Database Screenshot
+
+The following image documents the PostgreSQL tasks table and its records.
 
 ![PostgreSQL tasks table and records](docs/postgres-tasks.png)
 
-## Project structure
+The screenshot should be committed to the repository at `docs/postgres-tasks.png`.
 
-```text
-.
-├── main.py
-├── db.py
-├── requirements.txt
-├── Dockerfile
-├── compose.yaml
-├── .dockerignore
-├── .env.example
-└── README.md
-```
-
-## Notes
+## Implementation Notes
 
 - `.env` is excluded from Git.
-- `.env.example` documents the configuration.
+- `.env.example` documents the required configuration variables.
 - SQL queries use parameterized values.
-- The database persists in a named Docker volume.
+- Docker Compose manages the application and PostgreSQL containers.
+- A named Docker volume preserves database records across container recreation.
+
+## Repository
+
+[View the project on GitHub](https://github.com/Waqas392/fastapi-sqlite-tasks)
