@@ -1,67 +1,148 @@
-# Tasks API — SQLite edition (FlyRank BE-02 / A2)
+# Tasks API — PostgreSQL + Docker Compose (FlyRank BE-02 / A3)
 
-The CRUD API from Assignment 1, with the in-memory list replaced by a real
-SQLite database. The endpoints, request bodies, responses and status codes are
-unchanged — only the storage layer moved from memory to disk.
+A REST API for managing tasks, built with FastAPI and PostgreSQL. The application and database run in Docker containers and can be started with one command.
 
-**Stack:** Python · FastAPI · built-in `sqlite3`
+**Stack:** Python, FastAPI, PostgreSQL, Docker, Docker Compose
 
-## Why SQLite?
-- It is a single file, so there is no database server to install or run.
-- It needs zero setup: the file is created the first time the app starts.
-- Data survives restarts, which was the whole limitation of the in-memory version.
-- It ships with Python (`sqlite3`), so there is no extra dependency.
+## Features
 
-## Where the database lives
-`tasks.db`, next to `main.py`. It is created automatically on startup, together
-with the `tasks` table, and three example tasks are seeded **only** when the
-table is empty. The file is git-ignored, so every fresh clone starts clean.
+- Create, read, update, and delete tasks.
+- Automatically create the database table on startup.
+- Seed three example tasks only when the table is empty.
+- Validate requests and return consistent error responses.
+- Use parameterized SQL queries.
+- Preserve database records using a named Docker volume.
 
-```sql
-CREATE TABLE IF NOT EXISTS tasks (
-    id    INTEGER PRIMARY KEY,
-    title TEXT    NOT NULL,
-    done  BOOLEAN NOT NULL DEFAULT 0
-);
+## Requirements
+
+Install Docker Desktop and ensure it is running.
+
+## Configuration
+
+Copy the example environment file:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-## How to run
+Configuration variables:
+
+| Variable | Purpose |
+|---|---|
+| `POSTGRES_PASSWORD` | Password for the PostgreSQL database |
+| `DATABASE_URL` | Database connection string |
+
+The supplied values are for local development. Do not commit your `.env` file or real credentials.
+
+## Run the application
+
+From the project directory, run:
+
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --reload
+docker compose up
 ```
-The API is now at http://localhost:8000 (interactive docs at `/docs`).
 
-## Endpoints
+Docker Compose builds the API image, starts PostgreSQL, waits for the database health check, and starts the API.
+
+- API: http://localhost:3000
+- Interactive documentation: http://localhost:3000/docs
+- PostgreSQL host port: `5432`
+
+To start in the background:
+
+```bash
+docker compose up --build -d
+```
+
+To stop the containers without deleting database data:
+
+```bash
+docker compose down
+```
+
+Start them again with `docker compose up`. The named volume preserves database records.
+
+## API endpoints
+
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | GET | `/tasks` | 200 | — |
-| GET | `/tasks/{id}` | 200 | 404 `{"error": "Task not found"}` |
-| POST | `/tasks` | 201 | 400 missing/empty title |
-| PUT | `/tasks/{id}` | 200 | 400 invalid body, 404 unknown id |
-| DELETE | `/tasks/{id}` | 204 | 404 unknown id |
+| GET | `/tasks/{id}` | 200 | 404 if the task does not exist |
+| POST | `/tasks` | 201 | 400 for an invalid title |
+| PUT | `/tasks/{id}` | 200 | 400 for an invalid body; 404 if the task does not exist |
+| DELETE | `/tasks/{id}` | 204 | 404 if the task does not exist |
+| GET | `/stats` | 200 | — |
 
-Extras: `GET /tasks?search=milk` (SQL `LIKE`), `GET /tasks?done=true`
-(SQL `WHERE`), `GET /tasks?sort=title` (SQL `ORDER BY`), `GET /stats`
-(SQL `COUNT`).
+Optional filters include `GET /tasks?search=milk`, `GET /tasks?done=true`, and `GET /tasks?sort=title`.
 
-All queries use parameterized placeholders (`?`), so user input is never glued
-into SQL strings. Seeding runs inside a single transaction, so it is
-all-or-nothing.
+## Test the API
 
-## Proof the API didn't change
-The same `curl` commands from Assignment 1 pass unchanged against this version:
-same URLs, same JSON, same status codes (200 / 201 / 204 / 400 / 404). Because
-identical tests still pass, the storage really is an implementation detail
-behind the API.
+List tasks:
 
-## Database viewer
-![DB Browser showing tasks.db](docs/db-browser.png)
-
-## Example SQL I ran (Stage 4)
-```sql
-SELECT * FROM tasks WHERE done = 1;
+```bash
+curl -i http://localhost:3000/tasks
 ```
-It returned no rows at first, because no task was completed yet. After running
-`UPDATE tasks SET done = 1;`, the same query returned every task.
-![GET /tasks after the UPDATE](docs/api-tasks.png)
+
+Create a task:
+
+```bash
+curl -i -X POST http://localhost:3000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test Docker setup","done":false}'
+```
+
+The create request should return HTTP `201 Created`.
+
+Check statistics:
+
+```bash
+curl -i http://localhost:3000/stats
+```
+
+## Database initialization and persistence
+
+The application creates the `tasks` table automatically. Three example tasks are inserted only when the table is empty.
+
+PostgreSQL stores data in the named Docker volume `taskdata`. Running `docker compose down` preserves the volume. Do not use `docker compose down -v` when testing persistence because it deletes the volume.
+
+## Verify the database
+
+With the containers running, connect to PostgreSQL:
+
+```bash
+docker compose exec db psql -U postgres -d tasks
+```
+
+At the PostgreSQL prompt, run:
+
+```sql
+\dt
+SELECT * FROM tasks;
+```
+
+The first command lists the database tables. The second displays stored task records.
+
+Save a screenshot of the actual PostgreSQL table and query results as `docs/postgres-tasks.png`, then commit it to the repository.
+
+![PostgreSQL tasks table and records](docs/postgres-tasks.png)
+
+## Project structure
+
+```text
+.
+├── main.py
+├── db.py
+├── requirements.txt
+├── Dockerfile
+├── compose.yaml
+├── .dockerignore
+├── .env.example
+└── README.md
+```
+
+## Notes
+
+- `.env` is excluded from Git.
+- `.env.example` documents the configuration.
+- SQL queries use parameterized values.
+- The database persists in a named Docker volume.
